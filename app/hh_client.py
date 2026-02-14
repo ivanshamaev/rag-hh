@@ -15,9 +15,11 @@ def fetch_vacancies(
     text: str = "python",
     per_page: int = 100,
     max_pages: int = 5,
+    search_field: str = "name",
 ) -> list[dict[str, Any]]:
     """
     Поиск вакансий. Без авторизации можно делать до 5 запросов в минуту на один IP.
+    search_field: по API hh.ru допустимы name, company_name, description (см. /dictionaries).
     """
     all_items = []
     page = 0
@@ -30,7 +32,7 @@ def fetch_vacancies(
                     "text": text,
                     "per_page": per_page,
                     "page": page,
-                    "search_field": "name",  # или "all"
+                    "search_field": search_field,
                 },
             )
             r.raise_for_status()
@@ -47,6 +49,21 @@ def fetch_vacancies(
     return all_items
 
 
+def strip_html(html: str | None) -> str | None:
+    """
+    Удаление HTML-тегов из строки (описание вакансии с hh.ru).
+    Возвращает None для пустого ввода, иначе текст без тегов с нормализованными пробелами.
+    """
+    if not html or not html.strip():
+        return None
+    text = html
+    for tag in ("<p>", "</p>", "<br>", "<br/>", "<br />", "<ul>", "</ul>", "<li>", "</li>", "<strong>", "</strong>", "<div>", "</div>"):
+        text = text.replace(tag, " ")
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = " ".join(text.split())
+    return text.strip() or None
+
+
 def fetch_vacancy_detail(vacancy_id: str) -> dict[str, Any] | None:
     """Получить полное описание вакансии по id."""
     with httpx.Client(timeout=15.0) as client:
@@ -60,13 +77,8 @@ def fetch_vacancy_detail(vacancy_id: str) -> dict[str, Any] | None:
 def vacancy_to_text(v: dict[str, Any]) -> str:
     """Собрать текст вакансии для эмбеддинга: название + описание + требования."""
     parts = [v.get("name", "")]
-    if v.get("description"):
-        # убираем HTML-теги для краткости
-        desc = v["description"]
-        for tag in ("<p>", "</p>", "<br>", "<br/>", "<ul>", "</ul>", "<li>", "</li>", "<strong>", "</strong>"):
-            desc = desc.replace(tag, " ")
-        desc = re.sub(r"<[^>]+>", " ", desc)
-        desc = " ".join(desc.split())
+    desc = strip_html(v.get("description"))
+    if desc:
         parts.append(desc[:3000])  # ограничиваем длину
     if v.get("key_skills"):
         parts.append("Навыки: " + ", ".join(s["name"] for s in v["key_skills"]))

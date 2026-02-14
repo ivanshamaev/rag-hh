@@ -2,19 +2,41 @@
 API: индексация вакансий, векторный поиск, RAG (контекст для ответа).
 """
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.vacancies import load_and_index_vacancies, search_similar
+from app.vacancies import (
+    DEFAULT_DATA_ENGINEER_QUERIES,
+    get_stats,
+    load_and_index_vacancies,
+    load_and_index_vacancies_multi,
+    search_similar,
+)
 
 app = FastAPI(
     title="RAG HH",
     description="Векторный поиск по вакансиям hh.ru с pgvector. RAG: семантический поиск + контекст.",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class IngestRequest(BaseModel):
     search_query: str = "python"
     max_vacancies: int = 30
+
+
+class IngestBulkRequest(BaseModel):
+    """Загрузка до target_count вакансий по нескольким запросам (дедупликация по hh_id)."""
+
+    search_queries: list[str] | None = None  # по умолчанию — DATA_ENGINEER ключевые слова
+    target_count: int = 1000
 
 
 class SearchRequest(BaseModel):
@@ -25,6 +47,15 @@ class SearchRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/stats")
+def stats():
+    """Статистика по индексированным вакансиям: количество, компании, регионы, зарплаты."""
+    try:
+        return get_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest")
@@ -40,6 +71,24 @@ def ingest(body: IngestRequest | None = None):
             max_vacancies=min(body.max_vacancies, 100),
         )
         return {"indexed": n, "search_query": body.search_query}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ingest/bulk")
+def ingest_bulk(body: IngestBulkRequest | None = None):
+    """
+    Загрузить до target_count вакансий по нескольким поисковым запросам (Data Engineer и др.).
+    Результаты объединяются с дедупликацией по id. Займёт время из-за лимитов API hh.ru.
+    """
+    body = body or IngestBulkRequest()
+    try:
+        n = load_and_index_vacancies_multi(
+            search_queries=body.search_queries,
+            target_count=min(body.target_count, 2000),
+        )
+        queries = body.search_queries or DEFAULT_DATA_ENGINEER_QUERIES
+        return {"indexed": n, "search_queries": queries, "target_count": body.target_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

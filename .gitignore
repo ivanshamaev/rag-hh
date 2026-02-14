@@ -9,3 +9,7 @@ htmlcov
 *.egg-info
 dist
 build
+
+# frontend
+frontend/node_modules
+frontend/dist

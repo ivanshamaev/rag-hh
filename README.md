@@ -20,12 +20,21 @@ docker compose up --build
 - БД: `localhost:5432`, пользователь `rag`, пароль `rag`, БД `rag_hh`.
 - API: http://localhost:8001  
 - Документация: http://localhost:8001/docs  
+- **Frontend (Vue.js)** — в отдельном терминале: `cd frontend && npm i && npm run dev` → http://localhost:5173 (дашборд, семантический поиск, RAG). Прокси к API настроен в Vite.
 
 Первый запуск приложения займёт время: скачивание образа PostgreSQL, установка зависимостей и загрузка модели эмбеддингов при первом запросе.
 
 ## Документация
 
 Подробные руководства (эмбеддинги, pgvector, RAG, архитектура, hh.ru API, Docker) — в папке **[docs/](docs/README.md)**. Рекомендуется для углублённого понимания технологий и best practices.
+
+### Frontend (Vue.js)
+
+Полная документация по установке, запуску и сборке — **[frontend/README.md](frontend/README.md)**.
+
+- **Локальный запуск:** `cd frontend && npm install && npm run dev` → http://localhost:5173 (нужен запущенный API на 8001).
+- **Сборка:** `cd frontend && npm run build` → артефакты в `frontend/dist/`.
+- **Просмотр сборки:** `npm run preview` → http://localhost:4173.
 
 ## Шаги работы
 
@@ -41,11 +50,23 @@ curl -X POST http://localhost:8001/ingest \
 
 Или в Swagger: **POST /ingest** с телом `{"search_query": "python", "max_vacancies": 30}`.
 
+**Массовая загрузка ~1000 вакансий (Data Engineer и смежные):**
+
+```bash
+curl -X POST http://localhost:8001/ingest/bulk \
+  -H "Content-Type: application/json" \
+  -d '{"target_count": 1000}'
+```
+
+Или из терминала (без API): `python scripts/ingest_bulk.py --target 1000`. По умолчанию используются запросы: data engineer, дата инженер, инженер данных, dwh инженер, etl инженер и др.; результаты объединяются с дедупликацией по id. Загрузка займёт 20–40 минут из-за лимитов hh.ru.
+
 Данные сохраняются в таблицу `vacancies` (поля + вектор в колонке `embedding`).
 
-### 2. Векторный поиск
+### 2. Векторный поиск и RAG в браузере
 
-Поиск по смыслу (не по ключевым словам):
+Запустите фронтенд: `cd frontend && npm i && npm run dev`, откройте http://localhost:5173 (API должен быть доступен на http://localhost:8001 — например, через `docker compose up`). В интерфейсе: **Дашборд** — статистика (вакансии, компании, регионы, зарплаты); **Поиск** — семантический поиск по вакансиям; **RAG** — получение контекста (топ вакансий) с кнопкой «Копировать» для вставки в LLM.
+
+Через API напрямую:
 
 ```bash
 curl "http://localhost:8001/search?q=удалённая%20работа%20python&limit=5"
@@ -53,7 +74,7 @@ curl "http://localhost:8001/search?q=удалённая%20работа%20python&
 
 Ответ: список вакансий с полем `similarity` (косинусная близость).
 
-### 3. RAG — контекст для ответа
+### 3. RAG — контекст для ответа (API)
 
 Получить контекст по вопросу (топ релевантных вакансий) для передачи в LLM:
 
