@@ -1,0 +1,18 @@
+# DB
+psycopg[binary]>=3.1
+pgvector>=0.2.4
+
+# API & server
+fastapi>=0.109
+uvicorn[standard]>=0.27
+
+# HTTP
+httpx>=0.26
+
+# Embeddings (локальная модель, русский язык)
+# torch ставится в Dockerfile как CPU-only; локально: pip install torch
+sentence-transformers>=2.2.2
+
+# Utils
+python-dotenv>=1.0
+pydantic-settings>=2.0
