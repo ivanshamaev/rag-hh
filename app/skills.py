@@ -21,7 +21,84 @@ KNOWN_HARD_SKILLS = [
     "snowflake", "redshift", "bigquery", "tableau", "power bi", "metabase", "superset", "apache superset",
     "hadoop", "hive", "presto", "trino", "dbt core", "dagster", "prefect", "luigi",
     "aws", "gcp", "azure", "yandex cloud", "databricks", "mlflow", "kubeflow",
+    "vertica", "exasol", "teradata", "oracle", "sql server", "microsoft sql server",
+    "redis", "cassandra", "hbase", "druid", "pinot",
+
+    # Data Warehouse & Modeling
+    "data warehouse", "dwh", "data mart", "data lake", "data lakehouse",
+    "medallion architecture", "dimensional modeling", "kimball", "inmon",
+    "data vault", "data vault 2.0", "star schema", "snowflake schema",
+    "fact tables", "dimension tables", "slowly changing dimensions", "scd",
+    "surrogate keys", "cdc", "change data capture", "ods",
+    "master data management", "mdm", "data governance", "data lineage",
+    "data quality", "data modeling",
+
+    # Big Data Frameworks
+    "flink", "apache flink", "beam", "apache beam",
+    "storm", "apache storm", "samza",
+    "hbase", "cassandra", "druid", "pinot",
+    "delta lake", "apache iceberg", "iceberg",
+    "apache hudi", "hudi",
+
+    # Streaming & Messaging
+    "kafka streams", "ksqldb", "debezium",
+    "schema registry", "event-driven architecture",
+    "stream processing", "real-time data",
+    "exactly-once semantics", "idempotent processing",
+
+    # AWS Data Stack
+    "aws glue", "aws emr", "aws athena",
+    "aws lake formation", "aws kinesis",
+    "aws dynamodb", "aws s3",
+    "aws redshift spectrum", "aws step functions",
+
+    # GCP Data Stack
+    "dataflow", "dataproc", "pub/sub",
+    "biglake", "cloud composer",
+    "cloud functions", "cloud storage",
+
+    # Azure Data Stack
+    "azure data factory", "azure synapse",
+    "azure event hub", "azure databricks",
+    "azure data lake storage",
+
+    # OLAP & Performance
+    "olap", "olap cubes", "columnar storage",
+    "materialized views", "partitioning",
+    "clustering", "query optimization",
+    "cost-based optimizer", "mpp",
+    "vectorized execution",
+
+    # Data Formats
+    "parquet", "orc", "avro", "jsonl",
+    "data compression", "snappy", "zstd", "gzip",
+
+    # Data Quality & Observability
+    "great expectations", "data observability",
+    "data contracts", "anomaly detection",
+    "sla", "slo", "reconciliation",
+
+    # DevOps for Data
+    "gitops", "helm", "argo workflows",
+    "argocd", "infrastructure as code",
+    "blue/green deployment", "canary release",
+
+    # BI & Semantic Layer
+    "semantic layer", "metrics layer",
+    "cube.dev", "looker", "lookml",
+
+    # Security
+    "row level security", "column level security",
+    "iam", "data masking",
+    "encryption at rest", "encryption in transit",
+
+    # Distributed Systems Concepts
+    "distributed systems", "cap theorem",
+    "eventual consistency", "data sharding",
+    "replication", "consensus algorithms",
+    "acid", "base", "transactional lake",
 ]
+
 
 
 def normalize_skill_name(name: str) -> str:
