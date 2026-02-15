@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.skills import collect_skills_from_raw, get_skills
 from app.vacancies import (
     DEFAULT_DATA_ENGINEER_QUERIES,
     get_stats,
@@ -57,6 +58,32 @@ class SearchRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/skills/collect")
+def skills_collect():
+    """
+    Собрать навыки из public.raw_vacancies (поле key_skills в raw_json)
+    и заполнить таблицы public.skills и public.vacancy_skills.
+    Вызывать после загрузки сырых вакансий.
+    """
+    try:
+        result = collect_skills_from_raw()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/skills")
+def skills_list(
+    limit: int = Query(200, ge=1, le=1000, description="Максимум навыков в ответе"),
+):
+    """Список навыков с количеством вакансий (топ по частоте)."""
+    try:
+        items = get_skills(limit=limit)
+        return {"skills": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/stats")

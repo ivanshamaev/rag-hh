@@ -41,6 +41,19 @@
         </ul>
       </section>
 
+      <section class="section">
+        <h2 class="section-title">Вакансии по навыкам</h2>
+        <div v-if="skillsLoading" class="muted">Загрузка…</div>
+        <div v-else-if="!skills.length" class="muted">Нет данных (соберите навыки: POST /skills/collect)</div>
+        <ul class="area-list" v-else>
+          <li v-for="s in skills" :key="s.id" class="area-row">
+            <span class="area-name">{{ s.name }}</span>
+            <span class="area-count">{{ s.vacancy_count }}</span>
+            <div class="area-bar" :style="{ width: barWidthSkills(s.vacancy_count) + '%' }"></div>
+          </li>
+        </ul>
+      </section>
+
       <section class="section tips">
         <h2 class="section-title">Что можно сделать</h2>
         <ul class="tips-list">
@@ -55,7 +68,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getStats } from '@/api'
+import { getSkills, getStats } from '@/api'
 
 const loading = ref(true)
 const error = ref(null)
@@ -69,6 +82,9 @@ const stats = ref({
   raw_vacancies_count: null,
 })
 
+const skills = ref([])
+const skillsLoading = ref(true)
+
 function formatSalary(n) {
   if (n == null) return '—'
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
@@ -79,6 +95,11 @@ function barWidth(count) {
   return Math.round((count / max) * 100)
 }
 
+function barWidthSkills(count) {
+  const max = Math.max(...(skills.value || []).map((s) => s.vacancy_count), 1)
+  return Math.round((count / max) * 100)
+}
+
 onMounted(async () => {
   try {
     stats.value = await getStats()
@@ -86,6 +107,15 @@ onMounted(async () => {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+
+  skillsLoading.value = true
+  try {
+    skills.value = await getSkills(50)
+  } catch {
+    skills.value = []
+  } finally {
+    skillsLoading.value = false
   }
 })
 </script>

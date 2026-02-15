@@ -30,3 +30,8 @@ export async function rag(q, limit = 5) {
 export async function health() {
   return request('/health')
 }
+
+export async function getSkills(limit = 50) {
+  const res = await request(`/skills?limit=${limit}`)
+  return res.skills || []
+}
