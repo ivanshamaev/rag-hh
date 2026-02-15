@@ -35,19 +35,27 @@ def main() -> None:
         default=1.2,
         help="Пауза между запросами деталей к API hh.ru в секундах (по умолчанию 1.2)",
     )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Размер порции: загрузить N вакансий → эмбеддинги → БД, затем следующая порция (по умолчанию 100)",
+    )
     args = parser.parse_args()
 
     from app.vacancies import DEFAULT_DATA_ENGINEER_QUERIES, load_and_index_vacancies_multi
 
     queries = args.queries or DEFAULT_DATA_ENGINEER_QUERIES
     print(f"Запросы: {queries}")
-    print(f"Цель: {args.target} вакансий, задержка между запросами: {args.delay} с")
+    print(f"Цель: {args.target} вакансий, чанк: {args.chunk_size}, задержка: {args.delay} с")
     print("Загрузка может занять 20–40 минут из-за лимитов API hh.ru...")
 
     n = load_and_index_vacancies_multi(
         search_queries=queries,
         target_count=args.target,
         detail_delay_sec=args.delay,
+        chunk_size=args.chunk_size,
     )
     print(f"Проиндексировано вакансий: {n}")
 

@@ -1,6 +1,7 @@
 """
 Сохранение вакансий и эмбеддингов в PostgreSQL (pgvector).
 """
+import json
 import time
 from datetime import datetime
 from typing import Any
@@ -10,7 +11,13 @@ from pgvector.psycopg import register_vector
 
 from app.db import get_connection_sync, list_to_pgvector
 from app.embeddings import embed_batch
-from app.hh_client import fetch_vacancy_detail, fetch_vacancies, strip_html, vacancy_to_text
+from app.hh_client import (
+    PER_PAGE_MAX,
+    fetch_vacancy_detail,
+    fetch_vacancies,
+    strip_html,
+    vacancy_to_text,
+)
 
 
 def parse_date(s: str | None) -> datetime | None:
@@ -34,13 +41,16 @@ def upsert_vacancy(
     url: str | None,
     published_at: datetime | None,
     embedding: list[float],
+    hh_response: dict[str, Any] | None = None,
 ) -> None:
+    """hh_response — полный ответ API hh.ru (GET /vacancies/{id}) в формате JSON для колонки hh_response."""
+    hh_response_json = json.dumps(hh_response, ensure_ascii=False, default=str) if hh_response else None
     conn.execute(
         """
         INSERT INTO vacancies (
             hh_id, name, description, employer_name, area_name,
-            salary_from, salary_to, url, published_at, embedding
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector)
+            salary_from, salary_to, url, published_at, embedding, hh_response
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s::jsonb)
         ON CONFLICT (hh_id) DO UPDATE SET
             name = EXCLUDED.name,
             description = EXCLUDED.description,
@@ -50,7 +60,8 @@ def upsert_vacancy(
             salary_to = EXCLUDED.salary_to,
             url = EXCLUDED.url,
             published_at = EXCLUDED.published_at,
-            embedding = EXCLUDED.embedding
+            embedding = EXCLUDED.embedding,
+            hh_response = EXCLUDED.hh_response
         """,
         (
             hh_id,
@@ -63,6 +74,7 @@ def upsert_vacancy(
             url,
             published_at,
             list_to_pgvector(embedding),
+            hh_response_json,
         ),
     )
 
@@ -76,7 +88,7 @@ def load_and_index_vacancies(
     Загрузить вакансии с hh.ru, посчитать эмбеддинги и сохранить в БД.
     Возвращает количество проиндексированных вакансий.
     """
-    items = fetch_vacancies(text=search_query, per_page=20, max_pages=3)
+    items = fetch_vacancies(text=search_query, per_page=PER_PAGE_MAX, max_pages=5)
     if not items:
         return 0
 
@@ -115,6 +127,7 @@ def load_and_index_vacancies(
                 url=v.get("alternate_url"),
                 published_at=parse_date(v.get("published_at")),
                 embedding=emb,
+                hh_response=v,
             )
         conn.commit()
         return len(vacancies_data)
@@ -136,22 +149,30 @@ DEFAULT_DATA_ENGINEER_QUERIES = [
 ]
 
 
+def _chunks(lst: list[Any], size: int):
+    """Разбить список на чанки заданного размера."""
+    for i in range(0, len(lst), size):
+        yield lst[i : i + size]
+
+
 def load_and_index_vacancies_multi(
     search_queries: list[str] | None = None,
     target_count: int = 1000,
-    per_page: int = 100,
+    per_page: int = PER_PAGE_MAX,
     max_pages_per_query: int = 5,
     search_field: str = "name",
     detail_delay_sec: float = 1.2,
+    chunk_size: int = 100,
 ) -> int:
     """
     Загрузка вакансий по нескольким поисковым запросам с дедупликацией по hh_id.
-    Подходит для набора ~1000 вакансий по смежным формулировкам (например, Data Engineer).
+    Обработка чанками (по умолчанию 100): в памяти одновременно только одна порция,
+    остальное сразу пишется в БД. Подходит для target_count 1000+ без перегрузки памяти.
     search_field: по API hh.ru допустимы только name, company_name, description (не "all").
     """
     queries = search_queries or DEFAULT_DATA_ENGINEER_QUERIES
     seen_ids: set[str] = set()
-    unique_items: list[dict[str, Any]] = []
+    unique_ids: list[str] = []
 
     for text in queries:
         items = fetch_vacancies(
@@ -164,52 +185,56 @@ def load_and_index_vacancies_multi(
             vid = str(it.get("id", ""))
             if vid and vid not in seen_ids:
                 seen_ids.add(vid)
-                unique_items.append(it)
-                if len(unique_items) >= target_count:
+                unique_ids.append(vid)
+                if len(unique_ids) >= target_count:
                     break
-        if len(unique_items) >= target_count:
+        if len(unique_ids) >= target_count:
             break
 
-    to_process = unique_items[:target_count]
-    if not to_process:
+    id_list = unique_ids[:target_count]
+    if not id_list:
         return 0
 
-    vacancies_data: list[dict[str, Any]] = []
-    for i, it in enumerate(to_process):
-        if i > 0:
-            time.sleep(detail_delay_sec)
-        full = fetch_vacancy_detail(it["id"])
-        if full:
-            vacancies_data.append(full)
-
-    if not vacancies_data:
-        return 0
-
-    texts = [vacancy_to_text(v) for v in vacancies_data]
-    embeddings = embed_batch(texts)
-
+    total_indexed = 0
     conn = get_connection_sync()
     register_vector(conn)
     try:
-        for v, emb in zip(vacancies_data, embeddings):
-            salary = v.get("salary")
-            area = v.get("area", {}) or {}
-            employer = v.get("employer", {}) or {}
-            upsert_vacancy(
-                conn=conn,
-                hh_id=str(v["id"]),
-                name=v.get("name", ""),
-                description=strip_html(v.get("description")),
-                employer_name=employer.get("name"),
-                area_name=area.get("name"),
-                salary_from=salary.get("salary_from") if salary else None,
-                salary_to=salary.get("salary_to") if salary else None,
-                url=v.get("alternate_url"),
-                published_at=parse_date(v.get("published_at")),
-                embedding=emb,
-            )
-        conn.commit()
-        return len(vacancies_data)
+        for id_chunk in _chunks(id_list, chunk_size):
+            vacancies_data: list[dict[str, Any]] = []
+            for i, vid in enumerate(id_chunk):
+                if i > 0:
+                    time.sleep(detail_delay_sec)
+                full = fetch_vacancy_detail(vid)
+                if full:
+                    vacancies_data.append(full)
+
+            if not vacancies_data:
+                continue
+
+            texts = [vacancy_to_text(v) for v in vacancies_data]
+            embeddings = embed_batch(texts)
+            for v, emb in zip(vacancies_data, embeddings):
+                salary = v.get("salary")
+                area = v.get("area", {}) or {}
+                employer = v.get("employer", {}) or {}
+                upsert_vacancy(
+                    conn=conn,
+                    hh_id=str(v["id"]),
+                    name=v.get("name", ""),
+                    description=strip_html(v.get("description")),
+                    employer_name=employer.get("name"),
+                    area_name=area.get("name"),
+                    salary_from=salary.get("salary_from") if salary else None,
+                    salary_to=salary.get("salary_to") if salary else None,
+                    url=v.get("alternate_url"),
+                    published_at=parse_date(v.get("published_at")),
+                    embedding=emb,
+                    hh_response=v,
+                )
+            conn.commit()
+            total_indexed += len(vacancies_data)
+
+        return total_indexed
     finally:
         conn.close()
 

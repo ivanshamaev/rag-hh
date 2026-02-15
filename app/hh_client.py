@@ -10,15 +10,19 @@ import httpx
 
 API_BASE = "https://api.hh.ru"
 
+# Максимум вакансий на одну страницу в API hh.ru (GET /vacancies)
+PER_PAGE_MAX = 100
+
 
 def fetch_vacancies(
     text: str = "python",
-    per_page: int = 100,
+    per_page: int = PER_PAGE_MAX,
     max_pages: int = 5,
     search_field: str = "name",
 ) -> list[dict[str, Any]]:
     """
     Поиск вакансий. Без авторизации можно делать до 5 запросов в минуту на один IP.
+    per_page: до PER_PAGE_MAX (100) — максимум на страницу.
     search_field: по API hh.ru допустимы name, company_name, description (см. /dictionaries).
     """
     all_items = []

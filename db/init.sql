@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS vacancies (
     url TEXT,
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    embedding vector(384)  -- MiniLM-L12 = 384 dimensions
+    embedding vector(384),  -- MiniLM-L12 = 384 dimensions
+    hh_response JSONB       -- полный ответ API hh.ru (GET /vacancies/{id})
 );
 
 -- Индекс для быстрого приближённого поиска (IVFFlat)

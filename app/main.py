@@ -37,6 +37,7 @@ class IngestBulkRequest(BaseModel):
 
     search_queries: list[str] | None = None  # по умолчанию — DATA_ENGINEER ключевые слова
     target_count: int = 1000
+    chunk_size: int = 100  # размер порции: детали → эмбеддинги → БД (меньше = меньше пик памяти)
 
 
 class SearchRequest(BaseModel):
@@ -86,6 +87,7 @@ def ingest_bulk(body: IngestBulkRequest | None = None):
         n = load_and_index_vacancies_multi(
             search_queries=body.search_queries,
             target_count=min(body.target_count, 2000),
+            chunk_size=min(max(body.chunk_size, 10), 200),
         )
         queries = body.search_queries or DEFAULT_DATA_ENGINEER_QUERIES
         return {"indexed": n, "search_queries": queries, "target_count": body.target_count}

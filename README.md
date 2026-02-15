@@ -100,7 +100,8 @@ CREATE TABLE vacancies (
     salary_to INTEGER,
     url TEXT,
     published_at TIMESTAMPTZ,
-    embedding vector(384)   -- MiniLM-L12
+    embedding vector(384),  -- MiniLM-L12
+    hh_response JSONB      -- полный ответ API hh.ru (GET /vacancies/{id})
 );
 
 -- Индекс для приближённого поиска (IVFFlat)
@@ -110,6 +111,7 @@ USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 - **Точный поиск** — `ORDER BY embedding <=> $1 LIMIT k` (без индекса подходит для небольших объёмов).
 - **Приближённый (IVFFlat)** — быстрее на больших таблицах; точность настраивается параметром `lists`.
+- **hh_response** — в колонке хранится полный JSON-ответ API hh.ru по вакансии. Для уже существующих БД: `psql ... -f db/migrations/02_add_hh_response.sql`.
 
 ## Переменные окружения
 
