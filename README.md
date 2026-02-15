@@ -22,6 +22,8 @@ docker compose up --build
 - Документация: http://localhost:8001/docs  
 - **Frontend (Vue.js)** — в отдельном терминале: `cd frontend && npm i && npm run dev` → http://localhost:5173 (дашборд, семантический поиск, RAG). Прокси к API настроен в Vite.
 
+**Если http://localhost:8001/docs недоступен:** 1) Запущен ли Docker: `docker compose up` (без `-d` — смотрите логи). 2) При запуске без Docker uvicorn слушает порт 8000 по умолчанию — откройте http://localhost:8000/docs или запустите `uvicorn app.main:app --reload --port 8001`. 3) Контейнер упал: `docker compose logs app` — проверьте ошибки (БД, импорты). 4) Проверка порта: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health` — должен вернуть 200.
+
 Первый запуск приложения займёт время: скачивание образа PostgreSQL, установка зависимостей и загрузка модели эмбеддингов при первом запросе.
 
 ## Документация
@@ -119,8 +121,15 @@ USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 |------------|----------|
 | `DATABASE_URL` | Подключение к PostgreSQL (по умолчанию `postgresql://rag:rag@db:5432/rag_hh`) |
 | `EMBEDDING_MODEL` | Модель sentence-transformers (по умолчанию `paraphrase-multilingual-MiniLM-L12-v2`) |
+| `HH_TOKEN` | Опционально: OAuth-токен hh.ru для повышенных лимитов (меньше ошибок SSL/429) |
+| `HH_CLIENT_ID` | Опционально: client_id приложения hh.ru |
+| `HH_CLIENT_SECRET` | Опционально: client_secret приложения hh.ru |
 
 Для локального запуска без Docker задайте `DATABASE_URL` с хостом `localhost`.
+
+**hh.ru OAuth:** все данные хранятся в `.env`: `HH_TOKEN`, `HH_CLIENT_ID`, `HH_CLIENT_SECRET`. Токен подставляется в заголовок `Authorization: Bearer` при запросах к api.hh.ru. Файл `.env` в `.gitignore` — секреты не коммитятся.
+
+**Загрузка по ролям (Москва):** скрипт `scripts/ingest_by_roles.py` — вакансии по профессиональным ролям и региону (как в старом парсере). Пример: `python scripts/ingest_by_roles.py --area 1 --max-per-role 500 --roles "Дата-инженер"`.
 
 ## Зависимости
 

@@ -37,7 +37,8 @@ class IngestBulkRequest(BaseModel):
 
     search_queries: list[str] | None = None  # по умолчанию — DATA_ENGINEER ключевые слова
     target_count: int = 1000
-    chunk_size: int = 100  # размер порции: детали → эмбеддинги → БД (меньше = меньше пик памяти)
+    chunk_size: int = 10  # пачка: запрос N деталей → эмбеддинги → запись в БД (10 = быстрый прогресс, меньше SSL/таймаутов)
+    detail_delay_sec: float = 2.0  # пауза между запросами деталей к api.hh.ru (сек)
 
 
 class SearchRequest(BaseModel):
@@ -87,7 +88,8 @@ def ingest_bulk(body: IngestBulkRequest | None = None):
         n = load_and_index_vacancies_multi(
             search_queries=body.search_queries,
             target_count=min(body.target_count, 2000),
-            chunk_size=min(max(body.chunk_size, 10), 200),
+            chunk_size=min(max(body.chunk_size, 5), 100),
+            detail_delay_sec=max(1.0, min(body.detail_delay_sec, 30.0)),
         )
         queries = body.search_queries or DEFAULT_DATA_ENGINEER_QUERIES
         return {"indexed": n, "search_queries": queries, "target_count": body.target_count}

@@ -161,13 +161,13 @@ def load_and_index_vacancies_multi(
     per_page: int = PER_PAGE_MAX,
     max_pages_per_query: int = 5,
     search_field: str = "name",
-    detail_delay_sec: float = 1.2,
-    chunk_size: int = 100,
+    detail_delay_sec: float = 2.0,
+    chunk_size: int = 10,
 ) -> int:
     """
     Загрузка вакансий по нескольким поисковым запросам с дедупликацией по hh_id.
-    Обработка чанками (по умолчанию 100): в памяти одновременно только одна порция,
-    остальное сразу пишется в БД. Подходит для target_count 1000+ без перегрузки памяти.
+    Обработка чанками (по умолчанию 10): запрос 10 деталей → эмбеддинги → запись в БД,
+    затем следующий чанк. Меньший чанк снижает риск SSL/таймаутов и быстрее фиксирует прогресс.
     search_field: по API hh.ru допустимы только name, company_name, description (не "all").
     """
     queries = search_queries or DEFAULT_DATA_ENGINEER_QUERIES
@@ -207,6 +207,64 @@ def load_and_index_vacancies_multi(
                 full = fetch_vacancy_detail(vid)
                 if full:
                     vacancies_data.append(full)
+
+            if not vacancies_data:
+                continue
+
+            texts = [vacancy_to_text(v) for v in vacancies_data]
+            embeddings = embed_batch(texts)
+            for v, emb in zip(vacancies_data, embeddings):
+                salary = v.get("salary")
+                area = v.get("area", {}) or {}
+                employer = v.get("employer", {}) or {}
+                upsert_vacancy(
+                    conn=conn,
+                    hh_id=str(v["id"]),
+                    name=v.get("name", ""),
+                    description=strip_html(v.get("description")),
+                    employer_name=employer.get("name"),
+                    area_name=area.get("name"),
+                    salary_from=salary.get("salary_from") if salary else None,
+                    salary_to=salary.get("salary_to") if salary else None,
+                    url=v.get("alternate_url"),
+                    published_at=parse_date(v.get("published_at")),
+                    embedding=emb,
+                    hh_response=v,
+                )
+            conn.commit()
+            total_indexed += len(vacancies_data)
+
+        return total_indexed
+    finally:
+        conn.close()
+
+
+def load_and_index_vacancy_ids(
+    id_list: list[str],
+    chunk_size: int = 10,
+    detail_delay_sec: float = 2.0,
+) -> int:
+    """
+    Загрузить вакансии по списку hh_id: детали → эмбеддинги → БД чанками.
+    Удобно, когда ID уже получены (например, по professional_role + area).
+    """
+    if not id_list:
+        return 0
+    total_indexed = 0
+    conn = get_connection_sync()
+    register_vector(conn)
+    try:
+        for id_chunk in _chunks(id_list, chunk_size):
+            vacancies_data: list[dict[str, Any]] = []
+            for i, vid in enumerate(id_chunk):
+                if i > 0:
+                    time.sleep(detail_delay_sec)
+                try:
+                    full = fetch_vacancy_detail(vid)
+                    if full:
+                        vacancies_data.append(full)
+                except Exception:
+                    continue  # одна вакансия не загрузилась — пропускаем, чанк пишем
 
             if not vacancies_data:
                 continue

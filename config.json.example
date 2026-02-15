@@ -1,0 +1,5 @@
+{
+  "client_id": "ваш_client_id_из_личного_кабинета_hh",
+  "client_secret": "ваш_client_secret",
+  "token": "ваш_токен_для_Authorization_Bearer"
+}
