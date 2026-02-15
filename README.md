@@ -20,7 +20,7 @@ docker compose up --build
 - БД: `localhost:5432`, пользователь `rag`, пароль `rag`, БД `rag_hh`.
 - API: http://localhost:8001  
 - Документация: http://localhost:8001/docs  
-- **Frontend (Vue.js)** — в отдельном терминале: `cd frontend && npm i && npm run dev` → http://localhost:5173 (дашборд, семантический поиск, RAG). Прокси к API настроен в Vite.
+- **Frontend (Vue.js)** — в контейнере: http://localhost:3000 (дашборд, поиск, RAG). Запросы к API идут через nginx (`/api` → backend). Локальная разработка: `cd frontend && npm run dev` → http://localhost:5173.
 
 **Если http://localhost:8001/docs недоступен:** 1) Запущен ли Docker: `docker compose up` (без `-d` — смотрите логи). 2) При запуске без Docker uvicorn слушает порт 8000 по умолчанию — откройте http://localhost:8000/docs или запустите `uvicorn app.main:app --reload --port 8001`. 3) Контейнер упал: `docker compose logs app` — проверьте ошибки (БД, импорты). 4) Проверка порта: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health` — должен вернуть 200.
 
@@ -40,9 +40,9 @@ docker compose up --build
 
 ## Шаги работы
 
-### 1. Индексация вакансий
+### 1. Индексация вакансий (два этапа)
 
-Отправить запрос на загрузку вакансий с hh.ru и построение эмбеддингов:
+**Этап 1 — выгрузка в сыром виде:** вакансии с hh.ru сохраняются в `public.raw_vacancies` (только `hh_id` + полный JSON ответа API).
 
 ```bash
 curl -X POST http://localhost:8001/ingest \
@@ -50,19 +50,25 @@ curl -X POST http://localhost:8001/ingest \
   -d '{"search_query": "python backend", "max_vacancies": 30}'
 ```
 
-Или в Swagger: **POST /ingest** с телом `{"search_query": "python", "max_vacancies": 30}`.
-
-**Массовая загрузка ~1000 вакансий (Data Engineer и смежные):**
+Массовая выгрузка (Data Engineer и др.):
 
 ```bash
 curl -X POST http://localhost:8001/ingest/bulk \
   -H "Content-Type: application/json" \
-  -d '{"target_count": 1000}'
+  -d '{"target_count": 1000, "chunk_size": 10}'
 ```
 
-Или из терминала (без API): `python scripts/ingest_bulk.py --target 1000`. По умолчанию используются запросы: data engineer, дата инженер, инженер данных, dwh инженер, etl инженер и др.; результаты объединяются с дедупликацией по id. Загрузка займёт 20–40 минут из-за лимитов hh.ru.
+Или скрипт: `python scripts/ingest_bulk.py --target 1000`. Выгрузка займёт время из-за лимитов hh.ru.
 
-Данные сохраняются в таблицу `vacancies` (поля + вектор в колонке `embedding`).
+**Этап 2 — эмбеддинги и RAG:** из `raw_vacancies` строятся тексты, эмбеддинги и запись в `public.rag_vacancies` (поиск и дашборд работают с этой таблицей).
+
+```bash
+curl -X POST http://localhost:8001/ingest/embed \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Тело опционально: `{"limit": 500, "chunk_size": 50}` — обработать не более 500 сырых записей пачками по 50.
 
 ### 2. Векторный поиск и RAG в браузере
 
@@ -88,32 +94,12 @@ curl "http://localhost:8001/rag?q=Какие%20вакансии%20по%20Python%
 
 ## Схема БД (pgvector)
 
-```sql
-CREATE EXTENSION vector;
+Два этапа хранения:
 
-CREATE TABLE vacancies (
-    id BIGSERIAL PRIMARY KEY,
-    hh_id VARCHAR(32) UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    employer_name TEXT,
-    area_name TEXT,
-    salary_from INTEGER,
-    salary_to INTEGER,
-    url TEXT,
-    published_at TIMESTAMPTZ,
-    embedding vector(384),  -- MiniLM-L12
-    hh_response JSONB      -- полный ответ API hh.ru (GET /vacancies/{id})
-);
+- **`public.raw_vacancies`** — этап выгрузки: `hh_id` (PK), `raw_json` (JSONB), `created_at`. Только сырой ответ API.
+- **`public.rag_vacancies`** — этап RAG: `hh_id`, название, описание (без HTML), работодатель, регион, зарплата, url, `published_at`, `embedding` (vector 384). Поиск и дашборд читают отсюда.
 
--- Индекс для приближённого поиска (IVFFlat)
-CREATE INDEX vacancies_embedding_idx ON vacancies
-USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-```
-
-- **Точный поиск** — `ORDER BY embedding <=> $1 LIMIT k` (без индекса подходит для небольших объёмов).
-- **Приближённый (IVFFlat)** — быстрее на больших таблицах; точность настраивается параметром `lists`.
-- **hh_response** — в колонке хранится полный JSON-ответ API hh.ru по вакансии. Для уже существующих БД: `psql ... -f db/migrations/02_add_hh_response.sql`.
+Индекс для поиска: `rag_vacancies_embedding_idx` (IVFFlat). Для уже существующих БД без этих таблиц: `psql ... -f db/migrations/03_raw_and_rag_vacancies.sql`.
 
 ## Переменные окружения
 

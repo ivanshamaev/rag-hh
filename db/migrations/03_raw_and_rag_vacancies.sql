@@ -1,15 +1,11 @@
--- pgvector
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Этап 1: сырые данные из API hh.ru (только id + json)
+-- Разделение на этап выгрузки (raw) и этап эмбеддингов (rag)
 CREATE TABLE IF NOT EXISTS public.raw_vacancies (
     hh_id VARCHAR(32) PRIMARY KEY,
     raw_json JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-COMMENT ON TABLE public.raw_vacancies IS 'Сырые ответы API hh.ru (GET /vacancies/{id}); этап выгрузки без эмбеддингов';
+COMMENT ON TABLE public.raw_vacancies IS 'Сырые ответы API hh.ru; этап выгрузки без эмбеддингов';
 
--- Этап 2: вакансии с эмбеддингами для RAG (поиск, дашборд)
 CREATE TABLE IF NOT EXISTS public.rag_vacancies (
     id BIGSERIAL PRIMARY KEY,
     hh_id VARCHAR(32) UNIQUE NOT NULL,
@@ -22,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.rag_vacancies (
     url TEXT,
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    embedding vector(384)  -- MiniLM-L12 = 384 dimensions
+    embedding vector(384)
 );
 CREATE INDEX IF NOT EXISTS rag_vacancies_embedding_idx ON public.rag_vacancies
 USING ivfflat (embedding vector_cosine_ops)

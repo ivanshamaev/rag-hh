@@ -117,9 +117,19 @@ frontend/
 
 Имена переменных должны начинаться с `VITE_`, чтобы попасть в бандл (см. [Vite env](https://vitejs.dev/guide/env-and-mode.html)).
 
-## Развёртывание в production
+## Развёртывание в Docker
+
+Фронтенд собирается в образ и раздаётся через nginx в том же `docker compose`, что и backend:
+
+```bash
+docker compose up --build
+```
+
+Откройте http://localhost:3000 — SPA и запросы к API (`/api/*`) проксируются на backend. Сборка: multi-stage Dockerfile в `frontend/`, nginx конфиг в `frontend/nginx.conf`.
+
+## Развёртывание в production (без Docker)
 
 1. Собрать фронтенд: `npm run build`.
 2. Раздавать содержимое `frontend/dist/` через веб-сервер.
-3. Для SPA настроить fallback на `index.html` для всех путей (например, в Nginx: `try_files $uri $uri/ /index.html;`).
-4. Если API на другом домене — собрать с `VITE_API_URL=https://...` и настроить CORS на бэкенде (в проекте уже добавлены разрешённые origins для localhost:5173; для production добавьте свой origin в `app/main.py`).
+3. Для SPA настроить fallback на `index.html` (в Nginx: `try_files $uri $uri/ /index.html;`).
+4. Если API на другом домене — собрать с `VITE_API_URL=https://...` и настроить CORS на бэкенде.

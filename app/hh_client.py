@@ -26,7 +26,7 @@ def _get_headers() -> dict[str, str]:
 FETCH_DETAIL_RETRIES = 4
 FETCH_DETAIL_RETRY_DELAY_SEC = 3.0
 # Таймаут: отдельно на handshake и чтение (handshake часто падает при нагрузке)
-FETCH_DETAIL_TIMEOUT = httpx.Timeout(connect=25.0, read=40.0)
+FETCH_DETAIL_TIMEOUT = httpx.Timeout(connect=25.0, read=40.0, write=40.0, pool=10.0)
 
 # Максимум вакансий на одну страницу в API hh.ru (GET /vacancies)
 PER_PAGE_MAX = 100

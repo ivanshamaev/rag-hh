@@ -10,6 +10,7 @@ from app.vacancies import (
     get_stats,
     load_and_index_vacancies,
     load_and_index_vacancies_multi,
+    process_raw_to_rag,
     search_similar,
 )
 
@@ -33,12 +34,19 @@ class IngestRequest(BaseModel):
 
 
 class IngestBulkRequest(BaseModel):
-    """Загрузка до target_count вакансий по нескольким запросам (дедупликация по hh_id)."""
+    """Этап 1: выгрузка до target_count вакансий в raw_vacancies (дедупликация по hh_id)."""
 
-    search_queries: list[str] | None = None  # по умолчанию — DATA_ENGINEER ключевые слова
+    search_queries: list[str] | None = None
     target_count: int = 1000
-    chunk_size: int = 10  # пачка: запрос N деталей → эмбеддинги → запись в БД (10 = быстрый прогресс, меньше SSL/таймаутов)
-    detail_delay_sec: float = 2.0  # пауза между запросами деталей к api.hh.ru (сек)
+    chunk_size: int = 10
+    detail_delay_sec: float = 2.0
+
+
+class EmbedFromRawRequest(BaseModel):
+    """Этап 2: построить эмбеддинги из raw_vacancies и записать в rag_vacancies."""
+
+    limit: int | None = None  # макс. строк из raw (None = все)
+    chunk_size: int = 50  # пачка для embed_batch
 
 
 class SearchRequest(BaseModel):
@@ -63,8 +71,8 @@ def stats():
 @app.post("/ingest")
 def ingest(body: IngestRequest | None = None):
     """
-    Загрузить вакансии с hh.ru по запросу, построить эмбеддинги и сохранить в pgvector.
-    Первый запуск может занять время (скачивание модели + запросы к API).
+    Этап 1: выгрузить вакансии с hh.ru в public.raw_vacancies (только id + json).
+    Эмбеддинги — отдельно: POST /ingest/embed.
     """
     body = body or IngestRequest()
     try:
@@ -72,7 +80,7 @@ def ingest(body: IngestRequest | None = None):
             search_query=body.search_query,
             max_vacancies=min(body.max_vacancies, 100),
         )
-        return {"indexed": n, "search_query": body.search_query}
+        return {"saved_to_raw": n, "search_query": body.search_query}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,8 +88,8 @@ def ingest(body: IngestRequest | None = None):
 @app.post("/ingest/bulk")
 def ingest_bulk(body: IngestBulkRequest | None = None):
     """
-    Загрузить до target_count вакансий по нескольким поисковым запросам (Data Engineer и др.).
-    Результаты объединяются с дедупликацией по id. Займёт время из-за лимитов API hh.ru.
+    Этап 1: выгрузить до target_count вакансий по запросам в public.raw_vacancies.
+    Эмбеддинги — отдельно: POST /ingest/embed.
     """
     body = body or IngestBulkRequest()
     try:
@@ -92,7 +100,21 @@ def ingest_bulk(body: IngestBulkRequest | None = None):
             detail_delay_sec=max(1.0, min(body.detail_delay_sec, 30.0)),
         )
         queries = body.search_queries or DEFAULT_DATA_ENGINEER_QUERIES
-        return {"indexed": n, "search_queries": queries, "target_count": body.target_count}
+        return {"saved_to_raw": n, "search_queries": queries, "target_count": body.target_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ingest/embed")
+def ingest_embed(body: EmbedFromRawRequest | None = None):
+    """
+    Этап 2: прочитать public.raw_vacancies, построить эмбеддинги и записать в public.rag_vacancies.
+    Вызывать после POST /ingest или POST /ingest/bulk.
+    """
+    body = body or EmbedFromRawRequest()
+    try:
+        n = process_raw_to_rag(limit=body.limit, chunk_size=min(max(body.chunk_size, 10), 200))
+        return {"rag_indexed": n, "limit": body.limit}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

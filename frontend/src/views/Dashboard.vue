@@ -23,6 +23,10 @@
           <span class="card-value">{{ formatSalary(stats.avg_salary_from) }} – {{ formatSalary(stats.avg_salary_to) }}</span>
           <span class="card-label">Средняя вилка (руб)</span>
         </div>
+        <div class="card" v-if="stats.raw_vacancies_count != null">
+          <span class="card-value">{{ stats.raw_vacancies_count.toLocaleString('ru') }}</span>
+          <span class="card-label">В сыром виде (raw), ждут эмбеддингов</span>
+        </div>
       </div>
 
       <section class="section">
@@ -42,7 +46,7 @@
         <ul class="tips-list">
           <li><router-link to="/search">Поиск</router-link> — семантический поиск по вакансиям (по смыслу, не по ключевым словам).</li>
           <li><router-link to="/rag">RAG</router-link> — запрос контекста (топ вакансий) для передачи в LLM или анализа.</li>
-          <li>Индексация через API: <code>POST /ingest</code> или <code>POST /ingest/bulk</code> (см. README).</li>
+          <li>Два этапа: выгрузка в raw (<code>POST /ingest</code>, <code>POST /ingest/bulk</code>), затем эмбеддинги в RAG (<code>POST /ingest/embed</code>).</li>
         </ul>
       </section>
     </template>
@@ -62,6 +66,7 @@ const stats = ref({
   vacancies_with_salary: 0,
   avg_salary_from: null,
   avg_salary_to: null,
+  raw_vacancies_count: null,
 })
 
 function formatSalary(n) {
